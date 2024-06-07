@@ -3,6 +3,8 @@ import socketserver
 import urllib.request
 import threading
 import argparse
+import hashlib
+import redis
 
 # List of backend servers
 backend_servers = [
@@ -12,19 +14,39 @@ backend_servers = [
 ]
 
 class LoadBalancer:
+    def select_server(self, key):
+        raise NotImplementedError("select_server() must be implemented by subclasses")
+
+class RoundRobinLoadBalancer(LoadBalancer):
     def __init__(self):
         self.server_index = 0
         self.index_lock = threading.Lock()
 
-    def select_server(self):
-        raise NotImplementedError("select_server() must be implemented by subclasses")
-
-class RoundRobinLoadBalancer(LoadBalancer):
-    def select_server(self):
+    def select_server(self, key):
         with self.index_lock:
             backend_server = backend_servers[self.server_index]
             self.server_index = (self.server_index + 1) % len(backend_servers)
         return backend_server
+
+class IPHashedLoadBalancer(LoadBalancer):
+    def __init__(self):
+        self.redis_client = redis.StrictRedis(host='localhost', port=6379, db=0)
+        self.count = 0
+
+    def select_server(self, key):
+        # print("key is -> ", key)
+        server = self.redis_client.get(key)
+        if server is None:
+            server = self.calculate_server(key)
+            self.redis_client.set(key, server)
+        return server.decode('utf-8')
+
+    def calculate_server(self, key):
+        # hash_value = hashlib.sha1(key.encode()).hexdigest()
+        # server_index = int(hash_value, 16) % len(backend_servers)
+        count+=1
+        server_index = count % len(backend_servers)
+        return backend_servers[server_index]
 
 class SimpleHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
     def __init__(self, *args, load_balancer=None, **kwargs):
@@ -32,7 +54,8 @@ class SimpleHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
         super().__init__(*args, **kwargs)
 
     def do_GET(self):
-        backend_server = self.load_balancer.select_server()
+        client_ip = self.client_address[0]
+        backend_server = self.load_balancer.select_server(client_ip)
         url = f"{backend_server}{self.path}"
         self.send_proxy_request(url)
 
@@ -60,12 +83,14 @@ def run(server_class=http.server.HTTPServer, handler_class=SimpleHTTPRequestHand
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Reverse Proxy Load Balancer')
-    parser.add_argument('--lb_algorithm', type=str, choices=['rr1'], default='rr1',
+    parser.add_argument('--lb_algorithm', type=str, choices=['rr1', 'ip_hashed'], default='rr1',
                         help='Load balancing algorithm to use (default: rr1 for round robin)')
     args = parser.parse_args()
 
     if args.lb_algorithm == 'rr1':
         load_balancer = RoundRobinLoadBalancer()
+    elif args.lb_algorithm == 'ip_hashed':
+        load_balancer = IPHashedLoadBalancer()
     else:
         raise ValueError(f"Unsupported load balancing algorithm: {args.lb_algorithm}")
 
