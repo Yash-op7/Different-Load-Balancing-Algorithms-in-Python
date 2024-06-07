@@ -137,9 +137,10 @@ def run(server_class=http.server.HTTPServer, handler_class=SimpleHTTPRequestHand
     print(f"Reverse proxy server running on port {port} with load balancing algorithm: {type(load_balancer).__name__}")
     httpd.serve_forever()
 
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Reverse Proxy Load Balancer')
-    parser.add_argument('--lb_algorithm', type=str, choices=['rr1', 'ip_hashed'], default='rr1',
+    parser.add_argument('--lb_algorithm', type=str, choices=['rr1', 'ip_hashed', 'least_loaded', 'sticky_round_robin', 'weighted_round_robin'], default='rr1',
                         help='Load balancing algorithm to use (default: rr1 for round robin)')
     args = parser.parse_args()
 
@@ -147,6 +148,12 @@ if __name__ == '__main__':
         load_balancer = RoundRobinLoadBalancer()
     elif args.lb_algorithm == 'ip_hashed':
         load_balancer = IPHashedLoadBalancer()
+    elif args.lb_algorithm == 'least_loaded':
+        load_balancer = LeastLoadedLoadBalancer()
+    elif args.lb_algorithm == 'sticky_round_robin':
+        load_balancer = StickyRoundRobinLoadBalancer()
+    elif args.lb_algorithm == 'weighted_round_robin':
+        load_balancer = WeightedRoundRobinLoadBalancer()
     else:
         raise ValueError(f"Unsupported load balancing algorithm: {args.lb_algorithm}")
 
