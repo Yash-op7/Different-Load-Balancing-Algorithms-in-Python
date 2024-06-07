@@ -12,6 +12,11 @@ backend_servers = [
     "http://localhost:8002",
     "http://localhost:8003"
 ]
+backend_servers_loads = [0, 0, 0]             #! Initialize current loads for each server for testing 
+backend_servers_response_times = [0, 0, 0]    #! Initialize response times for each server for testing, in real implementation they are dynamically fetched
+client_to_server_mapping = {}
+server_weights = [0.8, 0.1, 0.1]              #! List of weights for each backend server proportional to its computing power
+
 
 class LoadBalancer:
     def select_server(self, key):
@@ -27,6 +32,37 @@ class RoundRobinLoadBalancer(LoadBalancer):
             backend_server = backend_servers[self.server_index]
             self.server_index = (self.server_index + 1) % len(backend_servers)
         return backend_server
+
+class StickyRoundRobinLoadBalancer(LoadBalancer):
+    def __init__(self):
+        self.redis_client = redis.StrictRedis(host='localhost', port=6379, db=0)
+
+    def select_server(self, client_ip):
+        if client_ip in client_to_server_mapping:
+            # If client has previously been assigned a server, use that server
+            return client_to_server_mapping[client_ip]
+        else:
+            # Otherwise, use the next server in the round-robin sequence
+            return self.round_robin()
+
+    def round_robin(self):
+        # Find the next available server in the round-robin sequence
+        next_server = backend_servers[len(client_to_server_mapping) % len(backend_servers)]
+        return next_server
+
+
+class WeightedRoundRobinLoadBalancer(LoadBalancer):
+    def __init__(self):
+        self.weighted_servers = self.generate_weighted_servers()
+
+    def generate_weighted_servers(self):
+        weighted_servers = []
+        for server, weight in zip(backend_servers, server_weights):
+            weighted_servers.extend([server] * int(weight * 10))
+        return weighted_servers
+
+    def select_server(self):
+        return random.choice(self.weighted_servers)
 
 class IPHashedLoadBalancer(LoadBalancer):
     def __init__(self):
@@ -47,6 +83,26 @@ class IPHashedLoadBalancer(LoadBalancer):
         count+=1
         server_index = count % len(backend_servers)
         return backend_servers[server_index]
+    
+class LeastLoadedLoadBalancer(LoadBalancer):
+    def __init__(self):
+        self.redis_client = redis.StrictRedis(host='localhost', port=6379, db=0)
+
+    def select_server(self):
+        min_load = min(range(len(backend_servers_loads)), key=lambda x: backend_servers_loads[x])
+        return backend_servers[min_load]
+
+class ResponseTimeLoadBalancer(LoadBalancer):
+    def __init__(self):
+        self.redis_client = redis.StrictRedis(host='localhost', port=6379, db=0)
+
+    def select_server(self):
+        min_response_time = min(backend_servers_response_times)
+        min_response_time_server_index = backend_servers_response_times.index(min_response_time)
+        return backend_servers[min_response_time_server_index]
+    
+
+
 
 class SimpleHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
     def __init__(self, *args, load_balancer=None, **kwargs):
