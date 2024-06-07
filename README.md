@@ -1,5 +1,5 @@
 # Different-Load-Balancing-Algorithms-in-Python
-Implemented 6 different load balancing algorithms in Python using a reverse proxy server.
+Implemented 6 different load balancing algorithms which redirect incoming loads using a reverse proxy server in Python.
 The six algorithms are:
 1. Round Robin
 2. Sticky Round Robin
